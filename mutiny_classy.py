@@ -143,7 +143,9 @@ class MutinyFuzzer():
             ### monitor.task = spawned thread
             ### monitor.crashEvent = threading.Event()
         if wantGlobalMonitor==True and global_monitor == None:
+            print("creating global monitor")
             global_monitor = self.procDirector.startMonitor(self.host,self.fuzzerData.port)
+            print global_monitor
             time.sleep(10) #clumsden added so pid_watcher has time to connect to monitor
 
         #! make it so logging message does not appear if reproducing (i.e. -r x-y cmdline arg is set)
@@ -606,12 +608,23 @@ def get_mutiny_with_args(prog_args):
     
     args = parser.parse_args()
 
-    try:
-        fuzzer = MutinyFuzzer(args)
-        return fuzzer
-    except Exception as e:
-        raise e
-    return None
+    fuzzer_files = []
+    if os.path.isdir(args.prepped_fuzz):
+        fuzzer_files = [f for f in os.listdir(args.prepped_fuzz) if os.path.isfile(os.path.join(args.prepped_fuzz, f))]
+    else:
+        fuzzer_files.append(args.prepped_fuzz)
+
+    print("fuzzer files: ",fuzzer_files)
+
+    fuzzers = []
+    fuzzer_dir = args.prepped_fuzz
+    for f in fuzzer_files:
+        args.prepped_fuzz = os.path.join(fuzzer_dir, f)
+        try:
+            fuzzers.append(MutinyFuzzer(args))
+        except Exception as e:
+            raise e
+    return fuzzers
 
 if __name__ == "__main__":
     # Usage case
@@ -619,13 +632,14 @@ if __name__ == "__main__":
         sys.argv.append('-h')
 
     #TODO - clumsden: wrap the following code to create a fuzzer for each .fuzzer file
-    fuzzer = get_mutiny_with_args(sys.argv[1:])
+    fuzzers = get_mutiny_with_args(sys.argv[1:])
 
     while True:
-        try:
-            fuzzer.fuzz()
-        except KeyboardInterrupt:
-            fuzzer.sigint_handler(1) 
+        for fuzzer in fuzzers:
+            try:
+                fuzzer.fuzz()
+            except KeyboardInterrupt:
+                fuzzer.sigint_handler(1) 
 
 
 
