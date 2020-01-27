@@ -116,6 +116,16 @@ class MutinyFuzzer():
         print "Reading in fuzzer data from %s..." % (self.fuzzerFilePath)
         self.fuzzerData.readFromFile(self.fuzzerFilePath)
 
+
+        #clumsden TODO - make this pretty, maybe add field to fuzzerData
+        #clumsden - hacky way to start http fuzzer at a different seed
+        if self.fuzzerData.port == 80 and self.fuzzerData.proto == "tcp":
+            self.MIN_RUN_NUMBER = 58247530
+        if self.fuzzerData.proto == "udp": #clumsden, set udp fuzzer at different seed
+            self.MIN_RUN_NUMBER = 13243441
+        #clumsden end
+
+
         ######## Processor Setup ################
         # The processor just acts as a container #
         # class that will import custom versions #
@@ -143,7 +153,6 @@ class MutinyFuzzer():
             ### monitor.task = spawned thread
             ### monitor.crashEvent = threading.Event()
         if wantGlobalMonitor==True and global_monitor == None:
-            print("creating global monitor")
             global_monitor = self.procDirector.startMonitor(self.host,self.fuzzerData.port)
             print global_monitor
             time.sleep(10) #clumsden added so pid_watcher has time to connect to monitor
@@ -193,17 +202,18 @@ class MutinyFuzzer():
     
             try:
                 try:
+                    print "\n\n%s: " % (self.fuzzerFilePath)
                     if args.dumpraw:
-                        print "\n\nPerforming single raw dump case: %d" % args.dumpraw
+                        print "Performing single raw dump case: %d" % args.dumpraw
                         self.performRun(fuzzerData, host, self.logger, messageProcessor, seed=args.dumpraw)
                     elif self.i == self.MIN_RUN_NUMBER-1:
-                        print "\n\nPerforming test run without fuzzing..."
+                        print "Performing test run without fuzzing..."
                         self.performRun(fuzzerData, host, self.logger, messageProcessor, seed=-1)
                     elif self.loop_len:
-                        print "\n\nFuzzing with seed %d" % (self.SEED_LOOP[self.i%loop_len])
+                        print "Fuzzing with seed %d" % (self.SEED_LOOP[self.i%loop_len])
                         self.performRun(fuzzerData, host, self.logger, messageProcessor, seed=self.SEED_LOOP[self.i%loop_len])
                     else:
-                        print "\n\nFuzzing with seed %d" % (self.i)
+                        print "Fuzzing with seed %d" % (self.i)
                         self.performRun(fuzzerData, host, self.logger, messageProcessor, seed=self.i)
                     #if --quiet, (self.logger==None) => AttributeError
                     if self.logAll:
@@ -223,7 +233,7 @@ class MutinyFuzzer():
                         print "Crash event detected"
                         try:
                             self.logger.outputLog(self.i, fuzzerData.messageCollection, "Crash event detected")
-                            exit() # have this commented out if you don't want to stop after a crash is detected
+                            exit() #clumsden - have this commented out if you don't want to stop after a crash is detected
                         except AttributeError:
                             pass
                         global_monitor.crashEvent.clear()
@@ -391,6 +401,8 @@ class MutinyFuzzer():
                 sys.exit(0)
         elif fuzzerData.proto == "L2raw":
             connection = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x0300)
+            connection.bind(('ens160', 0)) #clumsden TODO replace hardcoded iface for layer2 traffic
+            #clumsden TODO - experimental branch has addr=(host,0)
         else:
             addr = (host,0)
             try:
@@ -543,6 +555,8 @@ class MutinyFuzzer():
         connection.settimeout(self.fuzzerData.receiveTimeout)
         if connection.type == socket.SOCK_STREAM:
             connection.send(outPacketData)
+        elif connection.type == socket.SOCK_RAW: #for L2raw clumsden start
+            connection.send(outPacketData) # clumsden, ran into trouble with this later and needed sendto(outPacketData,addr)...what it was orginally?
         else:
             connection.sendto(outPacketData,addr)
     
@@ -610,16 +624,13 @@ def get_mutiny_with_args(prog_args):
 
     fuzzer_files = []
     if os.path.isdir(args.prepped_fuzz):
-        fuzzer_files = [f for f in os.listdir(args.prepped_fuzz) if os.path.isfile(os.path.join(args.prepped_fuzz, f))]
+        fuzzer_files = [os.path.join(args.prepped_fuzz, f) for f in os.listdir(args.prepped_fuzz) if os.path.isfile(os.path.join(args.prepped_fuzz, f))]
     else:
         fuzzer_files.append(args.prepped_fuzz)
 
-    print("fuzzer files: ",fuzzer_files)
-
     fuzzers = []
-    fuzzer_dir = args.prepped_fuzz
     for f in fuzzer_files:
-        args.prepped_fuzz = os.path.join(fuzzer_dir, f)
+        args.prepped_fuzz = f
         try:
             fuzzers.append(MutinyFuzzer(args))
         except Exception as e:
@@ -631,7 +642,7 @@ if __name__ == "__main__":
     if len(sys.argv) < 3:
         sys.argv.append('-h')
 
-    #TODO - clumsden: wrap the following code to create a fuzzer for each .fuzzer file
+    #clumsden - wrapped original code to loop through the .fuzzer files
     fuzzers = get_mutiny_with_args(sys.argv[1:])
 
     while True:
